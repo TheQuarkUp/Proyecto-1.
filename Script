@@ -1,1 +1,138 @@
+import networkx as nx
+import matplotlib.pyplot as plt
+import math
+import matplotlib.colors as mcolors
+
+# Constantes para la resistividad del material (cobre en este caso)
+rho_cobre = 1.68e-8  # resistividad del cobre en ohm*m
+area_transversal = 0.001  # área transversal promedio en m^2 (valor aproximado)
+
+# Función para calcular la distancia entre dos ciudades (simplificación de distancia euclidiana)
+def calcular_distancia(ciudad1, ciudad2):
+    coordenadas = {
+        "Madrid": (0, 0),
+        "Barcelona": (3, 5),
+        "Sevilla": (0, -6),
+        "Valencia": (3, -3),
+        "Zaragoza": (2, 1),
+        "Bilbao": (-2, 7),
+        "Málaga": (0, -5),
+        "Granada": (0, -4),
+        "Vigo": (-3, 6)
+    }
+    
+    x1, y1 = coordenadas[ciudad1]
+    x2, y2 = coordenadas[ciudad2]
+    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+# Función para calcular la resistencia basada en la distancia (longitud) y resistividad
+def calcular_resistencia(distancia):
+    # La resistencia depende de la resistividad del material (rho), la longitud (distancia), y el área transversal
+    resistencia = rho_cobre * (distancia / area_transversal)
+    return resistencia
+
+# Función para calcular la pérdida de energía basada en la distancia y la resistencia
+def calcular_perdida_energia(distancia):
+    resistencia = calcular_resistencia(distancia)
+    perdida = distancia * resistencia  # La pérdida de energía es proporcional a la distancia y la resistencia
+    return perdida
+
+# Inicialización del grafo con las ciudades y las conexiones
+def inicializar_red():
+    G = nx.Graph()
+    ciudades = ["Madrid", "Barcelona", "Sevilla", "Valencia", "Zaragoza", 
+                "Bilbao", "Málaga", "Granada", "Vigo"]
+    G.add_nodes_from(ciudades)
+
+    # Crear conexiones entre las ciudades, calculando las distancias y pérdidas de energía
+    for ciudad1 in ciudades:
+        for ciudad2 in ciudades:
+            if ciudad1 != ciudad2:
+                distancia = calcular_distancia(ciudad1, ciudad2)
+                # Calcular la resistencia realista basada en la distancia
+                perdida_energia = calcular_perdida_energia(distancia)
+                G.add_edge(ciudad1, ciudad2, peso=perdida_energia)
+
+    return G
+
+# Función para calcular las rutas más eficientes usando el algoritmo de Dijkstra
+def calcular_rutas(grafo, fuente):
+    # Obtenemos las rutas y las distancias usando Dijkstra con el peso (pérdida de energía)
+    rutas = nx.single_source_dijkstra_path(grafo, fuente, weight='peso')
+    distancias = nx.single_source_dijkstra_path_length(grafo, fuente, weight='peso')
+    
+    return rutas, distancias
+
+# Función para visualizar la red de distribución de energía
+def visualizar_red(grafo, rutas, distancias):
+    pos = {
+        "Madrid": (0, 0),
+        "Barcelona": (3, 5),
+        "Sevilla": (0, -6),
+        "Valencia": (3, -3),
+        "Zaragoza": (2, 1),
+        "Bilbao": (-2, 7),
+        "Málaga": (0, -5),
+        "Granada": (0, -4),
+        "Vigo": (-3, 6)
+    }
+    
+    # Dibujar el grafo
+    plt.figure(figsize=(10, 8))
+    nx.draw(grafo, pos, with_labels=True, node_size=2000, node_color="skyblue", font_size=12, font_weight="bold")
+    
+    # Crear un diccionario de las pérdidas de energía con formato simplificado
+    edge_labels = nx.get_edge_attributes(grafo, 'peso')
+    
+    # Redondear las pérdidas de energía y mostrarlas en notación científica con 2 decimales
+    edge_labels = {key: "{:.2e}".format(value) for key, value in edge_labels.items()}
+    
+    # Asignar colores a las aristas según la pérdida de energía utilizando un colormap
+    min_perdida = min(edge_labels.values(), key=lambda x: float(x))
+    max_perdida = max(edge_labels.values(), key=lambda x: float(x))
+    
+    # Definir un colormap para los colores de las aristas
+    colormap = plt.cm.viridis  # Colormap 'viridis' de matplotlib
+    norm = mcolors.Normalize(vmin=float(min_perdida), vmax=float(max_perdida))
+    
+    # Dibujar las aristas con el color correspondiente a su pérdida de energía
+    edge_colors = [colormap(norm(float(label))) for label in edge_labels.values()]
+    nx.draw_networkx_edges(grafo, pos, edge_color=edge_colors, width=2)
+    
+    # Mostrar las etiquetas de las pérdidas de energía
+    nx.draw_networkx_edge_labels(grafo, pos, edge_labels=edge_labels, font_size=10, font_color="green", font_weight="bold", verticalalignment='center')
+    
+    # Identificar la ruta con menor pérdida (más eficiente) y mayor pérdida (menos eficiente)
+    ruta_mas_eficiente = min(distancias, key=distancias.get)  # La ciudad más cercana a Madrid
+    ruta_menos_eficiente = max(distancias, key=distancias.get)  # La ciudad más lejana
+    
+    # Obtener las rutas completas
+    ruta_eficiente = rutas[ruta_mas_eficiente]
+    ruta_ineficiente = rutas[ruta_menos_eficiente]
+    
+    # Colorear las aristas de la ruta más eficiente en azul
+    for i in range(len(ruta_eficiente) - 1):
+        nx.draw_networkx_edges(grafo, pos, edgelist=[(ruta_eficiente[i], ruta_eficiente[i + 1])], edge_color="blue", width=2)
+    
+    # Colorear las aristas de la ruta menos eficiente en rojo
+    for i in range(len(ruta_ineficiente) - 1):
+        nx.draw_networkx_edges(grafo, pos, edgelist=[(ruta_ineficiente[i], ruta_ineficiente[i + 1])], edge_color="red", width=2)
+    
+    # Crear la leyenda de colores con la correspondencia de las pérdidas de energía
+    sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm)
+    sm.set_array([])  # No necesitamos datos para la leyenda, solo la escala de colores
+    plt.colorbar(sm, label="Pérdida de energía (W)")
+
+    plt.title("Red de Distribución de Energía")
+    plt.axis("off")  # Desactivar los ejes
+    plt.show()
+
+# Inicializar la red
+grafo = inicializar_red()
+
+# Ejecutar el algoritmo de Dijkstra desde "Madrid"
+rutas, distancias = calcular_rutas(grafo, "Madrid")
+
+# Visualizar la red
+visualizar_red(grafo, rutas, distancias)
 
